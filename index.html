@@ -57,12 +57,11 @@
     .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 30px; }
     .date { color: var(--muted); font: 11px 'DM Mono', monospace; letter-spacing: .4px; }
     .top-right { display: flex; align-items: center; gap: 12px; }
-    .search { width: min(270px, 38vw); position: relative; }
+    .search { width: min(320px, 46vw); position: relative; }
     .search input { width: 100%; border: 1px solid var(--line); background: #fafbfd; height: 40px; border-radius: 7px; padding: 0 14px 0 38px; outline: none; color: var(--ink); font-size: 12px; transition: border .2s, box-shadow .2s; }
     .search input:focus { border-color: #a6b5d0; box-shadow: 0 0 0 3px #708bb622; }
     .search input::placeholder { color: #9b9f94; }
     .search-icon { position: absolute; left: 13px; top: 10px; font-size: 14px; color: #838a7b; pointer-events: none; }
-    .avatar { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; background: #f3dfdd; color: #704342; font-weight: 700; font-size: 12px; }
     .welcome { margin-bottom: 24px; display: flex; align-items: end; justify-content: space-between; gap: 14px; }
     .eyebrow { color: var(--green-dark); font: 500 10px 'DM Mono', monospace; letter-spacing: 1.3px; text-transform: uppercase; }
     h1 { margin: 7px 0 0; color: #657286; font-size: clamp(25px, 3vw, 34px); font-weight: 500; letter-spacing: -.9px; line-height: 1.3; }
@@ -163,6 +162,8 @@
     .word-list { display: grid; gap: 4px; margin-top: 13px; }
     .word-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; width: 100%; padding: 9px 8px; background: transparent; border: 0; border-radius: 5px; cursor: pointer; text-align: left; }
     .word-item:hover, .word-item.current { background: #f0f2f6; }
+    .word-item:disabled { color: #9299a5; cursor: not-allowed; opacity: .72; }
+    .word-item:disabled:hover { background: transparent; }
     .word-item strong { font-family: 'Nunito Sans', 'Gowun Dodum', sans-serif; font-weight: 600; display: block; font-size: 12px; }
     .word-item small { display: block; color: #8a9084; font-size: 9px; margin-top: 3px; }
     .word-item .tag { color: #88905f; font: 9px 'DM Mono', monospace; }
@@ -181,7 +182,7 @@
       .sidebar { display: none; }
       main { padding: 20px 17px 32px; }
       .topbar { margin-bottom: 25px; }
-      .search { width: min(250px, 60vw); }
+      .search { width: min(250px, 68vw); }
       .welcome { display: block; }
       .welcome-note { margin-top: 9px; }
       .layout { grid-template-columns: 1fr; }
@@ -197,9 +198,8 @@
       .topbar { margin-bottom: 22px; }
       .date { font-size: 9px; }
       .top-right { gap: 8px; }
-      .search { width: min(205px, 57vw); }
+      .search { width: min(250px, 68vw); }
       .search input { height: 37px; font-size: 11px; }
-      .avatar { width: 33px; height: 33px; }
       .level { min-width: 78px; }
       .lesson { padding: 16px 15px; }
       .translation-grid { gap: 7px; }
@@ -239,8 +239,7 @@
       <header class="topbar">
         <div class="date" id="todayDate">BONJOUR, 오늘도 반가워요</div>
         <div class="top-right">
-          <label class="search"><span class="search-icon">⌕</span><input id="searchInput" type="search" placeholder="프랑스어 단어 검색" autocomplete="off" aria-label="프랑스어 단어 검색"></label>
-          <div class="avatar" aria-label="학습자 프로필">안</div>
+          <label class="search"><span class="search-icon">⌕</span><input id="searchInput" type="search" placeholder="단어·뜻·예문 검색" autocomplete="off" aria-label="프랑스어·한국어·영어 단어와 예문 검색"></label>
         </div>
       </header>
 
@@ -378,6 +377,7 @@
     let state = loadState();
     let currentIndex = 0;
     let searchQuery = '';
+    let selectedSearchIndex = 0;
     let reviewMode = false;
     let reviewRevealed = false;
     let quiz = null;
@@ -397,30 +397,62 @@
       const previousLevel = levelOrder[index - 1];
       return (state.learned[previousLevel] || []).length >= vocabulary[previousLevel].length && state.passed[previousLevel] === true;
     }
+    function normalizeSearchText(value) {
+      return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\u2018\u2019\u02BC]/g, "'").toLocaleLowerCase();
+    }
+    function searchMatches() {
+      if (!searchQuery) return [];
+      const query = normalizeSearchText(searchQuery);
+      return levelOrder
+        .flatMap(level => vocabulary[level].map((word, wordIndex) => ({ word, level, wordIndex, unlocked: isLevelUnlocked(level) })))
+        .filter(({ word }) => normalizeSearchText([
+          word.fr, word.ipa, word.ko, word.en, word.category,
+          word.definition, word.exFr, word.exKo, word.exEn
+        ].join(' ')).includes(query));
+    }
     function visibleWords() {
       const words = listForLevel();
       if (!searchQuery) return words;
-      const query = searchQuery.toLocaleLowerCase();
-      return words.filter(word => `${word.fr} ${word.ko} ${word.en} ${word.category}`.toLocaleLowerCase().includes(query));
+      const query = normalizeSearchText(searchQuery);
+      return words.filter(word => normalizeSearchText([
+        word.fr, word.ipa, word.ko, word.en, word.category,
+        word.definition, word.exFr, word.exKo, word.exEn
+      ].join(' ')).includes(query));
     }
-    function currentWord() { return visibleWords()[currentIndex] || listForLevel()[0]; }
+    function currentWord() {
+      if (searchQuery) {
+        const match = searchMatches()[selectedSearchIndex];
+        return match?.unlocked ? match.word : null;
+      }
+      return visibleWords()[currentIndex] || listForLevel()[0];
+    }
 
     function renderWord() {
+      const matches = searchQuery ? searchMatches() : [];
+      const selectedMatch = matches[selectedSearchIndex];
       const word = currentWord();
-      const noResults = searchQuery && !visibleWords().length;
+      const noResults = searchQuery && !matches.some(match => match.unlocked);
       document.querySelector('.lesson').hidden = Boolean(noResults);
+      document.querySelector('.lesson-actions').hidden = Boolean(searchQuery);
       if (noResults) {
         document.querySelector('.lesson').hidden = false;
-        document.getElementById('wordFrench').textContent = '단어를 찾지 못했어요';
-        document.getElementById('wordPronunciation').textContent = '다른 프랑스어 단어를 검색해 보세요';
-        document.getElementById('wordKorean').textContent = '검색 결과 없음';
-        document.getElementById('wordEnglish').textContent = 'No results';
-        document.getElementById('wordDefinition').textContent = '현재 레벨의 단어장에 있는 프랑스어, 한국어, 영어 단어를 검색할 수 있어요.';
-        document.getElementById('exampleFrench').textContent = 'Essayez un autre mot.';
-        document.getElementById('exampleKorean').textContent = '다른 단어를 검색해 보세요.';
-        document.getElementById('exampleEnglish').textContent = 'Try another word.';
-        document.getElementById('unitChip').textContent = '검색';
-        document.getElementById('lessonKicker').textContent = 'RECHERCHE · 단어 찾기';
+        const foundLockedMatch = matches.length > 0;
+        document.getElementById('wordFrench').textContent = foundLockedMatch ? '다음 단계의 단어예요' : '검색 결과가 없어요';
+        document.getElementById('wordPronunciation').textContent = foundLockedMatch ? '이전 단계 실력 점검을 통과하면 열려요' : '다른 단어나 표현을 검색해 보세요';
+        document.getElementById('wordKorean').textContent = foundLockedMatch ? '레벨 잠김' : '검색 결과 없음';
+        document.getElementById('wordEnglish').textContent = foundLockedMatch ? 'Level locked' : 'No results';
+        document.getElementById('wordDefinition').textContent = foundLockedMatch
+          ? '검색 결과는 있지만 이 단어가 속한 레벨은 아직 잠겨 있어요. 앞 단계를 마치고 실력 점검을 통과하면 학습할 수 있습니다.'
+          : '프랑스어, 한국어, 영어 단어와 뜻, 분류, 대화 예문을 검색할 수 있어요.';
+        document.getElementById('exampleFrench').textContent = foundLockedMatch ? 'Terminez le niveau précédent pour continuer.' : 'Essayez un autre mot.';
+        document.getElementById('exampleKorean').textContent = foundLockedMatch ? '이전 레벨을 완료하고 계속 학습해 보세요.' : '다른 단어를 검색해 보세요.';
+        document.getElementById('exampleEnglish').textContent = foundLockedMatch ? 'Complete the previous level to continue.' : 'Try another word.';
+        document.getElementById('unitChip').textContent = foundLockedMatch ? '레벨 잠김' : '검색';
+        document.getElementById('lessonKicker').textContent = foundLockedMatch ? 'NIVEAU VERROUILLÉ · 단계 잠김' : 'RECHERCHE · 단어 찾기';
+        document.getElementById('wordKorean').parentElement.hidden = false;
+        document.getElementById('wordEnglish').parentElement.hidden = false;
+        document.getElementById('wordDefinition').hidden = false;
+        document.querySelector('.example').hidden = false;
         return;
       }
       document.getElementById('wordFrench').textContent = word.fr;
@@ -432,7 +464,7 @@
       document.getElementById('exampleKorean').textContent = word.exKo;
       document.getElementById('exampleEnglish').textContent = word.exEn;
       document.getElementById('unitChip').textContent = word.category;
-      document.getElementById('lessonKicker').textContent = reviewMode && !reviewRevealed ? 'CARTE MÉMOIRE · 먼저 떠올려 보세요' : 'LE MOT DU JOUR · 오늘의 단어';
+      document.getElementById('lessonKicker').textContent = searchQuery ? `RECHERCHE · ${levelNames[selectedMatch.level]} 단어` : reviewMode && !reviewRevealed ? 'CARTE MÉMOIRE · 먼저 떠올려 보세요' : 'LE MOT DU JOUR · 오늘의 단어';
       document.getElementById('wordKorean').parentElement.hidden = reviewMode && !reviewRevealed;
       document.getElementById('wordEnglish').parentElement.hidden = reviewMode && !reviewRevealed;
       document.getElementById('wordDefinition').hidden = reviewMode && !reviewRevealed;
@@ -442,9 +474,48 @@
 
     function renderList() {
       const list = document.getElementById('wordList');
+      if (searchQuery) {
+        const matches = searchMatches();
+        document.getElementById('vocabTitle').textContent = '전체 단어 검색';
+        document.getElementById('vocabSubtitle').textContent = matches.length
+          ? `전체 단계에서 ${matches.length}개를 찾았어요. 잠긴 단계는 먼저 이전 레벨을 완료해 주세요.`
+          : '프랑스어·한국어·영어, 뜻과 예문을 검색해 보세요.';
+        document.getElementById('vocabCount').textContent = `${String(matches.length).padStart(2, '0')} RÉSULTATS`;
+        if (!matches.length) {
+          list.innerHTML = '<div class="empty-state">단어를 찾지 못했어요.<br>프랑스어, 한국어, 영어 또는 예문으로 검색해 보세요.</div>';
+          return;
+        }
+        list.replaceChildren();
+        matches.forEach((match, index) => {
+          const button = document.createElement('button');
+          button.className = `word-item ${index === selectedSearchIndex ? 'current' : ''}`;
+          button.type = 'button';
+          button.disabled = !match.unlocked;
+          button.dataset.searchIndex = String(index);
+          button.setAttribute('aria-label', `${match.word.fr}, ${match.word.ko}, ${levelNames[match.level]}${match.unlocked ? '' : ', 단계 잠김'}`);
+          const label = document.createElement('span');
+          const french = document.createElement('strong');
+          french.textContent = match.word.fr;
+          const korean = document.createElement('small');
+          korean.textContent = `${match.word.ko} · ${levelNames[match.level]}${match.unlocked ? '' : ' · 잠김'}`;
+          const number = document.createElement('span');
+          number.className = 'tag';
+          number.textContent = match.unlocked ? String(index + 1).padStart(2, '0') : '잠김';
+          label.append(french, korean);
+          button.append(label, number);
+          button.addEventListener('click', () => {
+            if (!match.unlocked) return;
+            selectedSearchIndex = index;
+            reviewMode = false;
+            renderWord(); renderList();
+          });
+          list.append(button);
+        });
+        return;
+      }
       const words = visibleWords();
-      document.getElementById('vocabTitle').textContent = searchQuery ? '검색 결과' : `${levelNames[state.level]} 단어장`;
-      document.getElementById('vocabSubtitle').textContent = searchQuery ? '결과를 눌러 뜻을 확인해 보세요.' : '눌러서 단어 뜻을 확인해 보세요.';
+      document.getElementById('vocabTitle').textContent = `${levelNames[state.level]} 단어장`;
+      document.getElementById('vocabSubtitle').textContent = '눌러서 단어 뜻을 확인해 보세요.';
       document.getElementById('vocabCount').textContent = `${String(words.length).padStart(2, '0')} MOTS`;
       if (!words.length) {
         list.innerHTML = '<div class="empty-state">아직 이 레벨에서 찾지 못했어요.<br>bonjour 또는 merci를 검색해 보세요.</div>';
@@ -510,6 +581,7 @@
       state.level = level;
       currentIndex = 0;
       searchQuery = '';
+      selectedSearchIndex = 0;
       reviewMode = false;
       document.getElementById('searchInput').value = '';
       document.querySelectorAll('.level').forEach(button => {
@@ -698,7 +770,7 @@
       if (event.key === 'Escape' && !document.getElementById('audioHelpDialog').hidden) closeAudioHelp();
     });
     document.getElementById('searchInput').addEventListener('input', event => {
-      searchQuery = event.target.value.trim(); currentIndex = 0; reviewMode = false; renderWord(); renderList();
+      searchQuery = event.target.value.trim(); currentIndex = 0; selectedSearchIndex = 0; reviewMode = false; renderWord(); renderList();
     });
     function openAudioHelp(reason) {
       document.getElementById('audioHelpReason').textContent = reason || '브라우저가 음성 읽기를 지원하지 않거나 프랑스어 음성이 준비되지 않았을 수 있어요.';
