@@ -95,7 +95,16 @@
     .definition { margin: -3px 0 16px; color: #62695e; font-size: 11px; line-height: 1.55; }
     .example { background: #f6f7f2; border-radius: 6px; padding: 13px 14px; }
     .example-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+    .example-tools { display: flex; align-items: center; gap: 7px; }
     .example-label { font: 9px 'DM Mono', monospace; letter-spacing: .8px; color: #8b9184; }
+    .audio-help-button { border: 0; padding: 5px 4px; background: transparent; color: #647797; font-size: 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .audio-help-button:hover { color: #435e8d; }
+    .audio-help-copy { margin: 17px 0 0; color: #687486; font-size: 12px; line-height: 1.65; }
+    .audio-help-steps { display: grid; gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; counter-reset: audio-step; }
+    .audio-help-steps li { position: relative; padding: 0 0 0 31px; color: #626d7d; font-size: 11px; line-height: 1.65; counter-increment: audio-step; }
+    .audio-help-steps li::before { content: counter(audio-step); position: absolute; top: 1px; left: 0; width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: #edf1f8; color: #52698e; font: 11px 'Nunito Sans', sans-serif; }
+    .audio-help-note { margin: 15px 0 0; padding: 10px 12px; border-radius: 6px; background: #fbf1f0; color: #875e5b; font-size: 10px; line-height: 1.6; }
+    .audio-help-actions { margin-top: 18px; }
     .example-fr { font-family: 'Nunito Sans', 'Gowun Dodum', sans-serif; font-weight: 500; font-size: 14px; line-height: 1.6; white-space: pre-line; }
     .example-translation { margin-top: 4px; color: #777e72; font-size: 11px; line-height: 1.5; white-space: pre-line; }
     .lesson-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 15px; }
@@ -256,7 +265,7 @@
               <div class="translation"><label>ENGLISH</label><strong id="wordEnglish">hello · good day</strong></div>
             </div>
             <p class="definition" id="wordDefinition">낮에 만났을 때 건네는 가장 기본적인 인사예요. 처음 만나는 사람에게도, 아는 사람에게도 쓸 수 있어요.</p>
-            <div class="example"><div class="example-head"><div class="example-label">EN CONTEXTE · 예문</div><button class="sound-btn" id="speakExampleButton" title="프랑스어 예문 듣기" aria-label="프랑스어 예문 듣기">♪</button></div><div class="example-fr" id="exampleFrench">Bonjour, comment allez-vous ?</div><div class="example-translation" id="exampleKorean">안녕하세요, 어떻게 지내세요?</div><div class="example-translation" id="exampleEnglish">Hello, how are you?</div></div>
+            <div class="example"><div class="example-head"><div class="example-label">EN CONTEXTE · 예문</div><div class="example-tools"><button class="audio-help-button" id="audioHelpButton" type="button">소리가 안 들리나요?</button><button class="sound-btn" id="speakExampleButton" title="프랑스어 예문 듣기" aria-label="프랑스어 예문 듣기">♪</button></div></div><div class="example-fr" id="exampleFrench">Bonjour, comment allez-vous ?</div><div class="example-translation" id="exampleKorean">안녕하세요, 어떻게 지내세요?</div><div class="example-translation" id="exampleEnglish">Hello, how are you?</div></div>
             <div class="lesson-actions"><button class="text-button" id="previousButton">← 이전 단어</button><button class="primary-button" id="nextButton">다음 단어 <span aria-hidden="true">→</span></button></div>
           </article>
 
@@ -305,6 +314,20 @@
         <p class="quiz-result-copy" id="quizResultCopy"></p>
         <div class="quiz-result-actions" id="quizResultActions"></div>
       </div>
+    </section>
+  </div>
+  <div class="quiz-dialog" id="audioHelpDialog" hidden>
+    <div class="quiz-backdrop" data-close-audio-help></div>
+    <section class="quiz-sheet" role="dialog" aria-modal="true" aria-labelledby="audioHelpTitle">
+      <div class="quiz-head"><div><div class="quiz-eyebrow">AIDE AUDIO · 음성 안내</div><h2 id="audioHelpTitle">프랑스어 소리가 안 들리나요?</h2></div><button class="quiz-close" id="closeAudioHelpButton" aria-label="음성 안내 닫기">×</button></div>
+      <p class="audio-help-copy" id="audioHelpReason">브라우저가 음성 읽기를 지원하지 않거나 프랑스어 음성이 준비되지 않았을 수 있어요.</p>
+      <ol class="audio-help-steps">
+        <li><strong>앱 안에서 링크를 열었다면:</strong> 메뉴에서 <strong>Chrome 또는 Samsung Internet으로 열기</strong>를 선택한 뒤, 페이지를 새로고침하고 다시 눌러보세요.</li>
+        <li><strong>Galaxy에서 프랑스어 음성을 설치하려면:</strong> 휴대폰 <strong>설정 → 일반 관리 → 텍스트 음성 변환</strong>으로 이동해 음성 엔진을 선택하고, 언어/음성 데이터에서 <strong>프랑스어(프랑스)</strong>를 다운로드하세요. 메뉴 이름은 One UI 버전에 따라 조금 다를 수 있어요.</li>
+        <li><strong>여전히 들리지 않으면:</strong> 미디어 음량과 Bluetooth 출력 장치를 확인한 뒤 브라우저를 다시 열어보세요.</li>
+      </ol>
+      <p class="audio-help-note">일부 메신저·소셜 앱의 내장 브라우저는 음성 기능을 제공하지 않습니다. 이 경우 앱을 바꾸어 링크를 여는 것이 가장 빠른 해결 방법이에요.</p>
+      <div class="quiz-result-actions audio-help-actions"><button class="primary-button" id="closeAudioHelpAction">확인</button></div>
     </section>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -672,19 +695,54 @@
     document.querySelector('[data-close-quiz]').addEventListener('click', closeSkillCheck);
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && !document.getElementById('quizDialog').hidden) closeSkillCheck();
+      if (event.key === 'Escape' && !document.getElementById('audioHelpDialog').hidden) closeAudioHelp();
     });
     document.getElementById('searchInput').addEventListener('input', event => {
       searchQuery = event.target.value.trim(); currentIndex = 0; reviewMode = false; renderWord(); renderList();
     });
+    function openAudioHelp(reason) {
+      document.getElementById('audioHelpReason').textContent = reason || '브라우저가 음성 읽기를 지원하지 않거나 프랑스어 음성이 준비되지 않았을 수 있어요.';
+      document.getElementById('audioHelpDialog').hidden = false;
+      document.getElementById('closeAudioHelpButton').focus();
+    }
+
+    function closeAudioHelp() {
+      document.getElementById('audioHelpDialog').hidden = true;
+      document.getElementById('audioHelpButton').focus();
+    }
+
     function speakFrench(text) {
-      if (!text || !('speechSynthesis' in window)) { showToast('이 브라우저에서는 음성 읽기를 지원하지 않아요.'); return; }
+      if (!text) return;
+      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance !== 'function') {
+        openAudioHelp('현재 페이지를 연 브라우저에서 음성 읽기 기능을 사용할 수 없어요. Galaxy에서는 Chrome 또는 Samsung Internet으로 열어보세요.');
+        return;
+      }
+      const synthesis = window.speechSynthesis;
+      const voices = synthesis.getVoices();
+      const frenchVoice = voices.find(voice => /^fr([_-]|$)/i.test(voice.lang));
+      if (voices.length && !frenchVoice) {
+        openAudioHelp('브라우저 음성 기능은 있지만 프랑스어 음성을 찾지 못했어요. 안내에 따라 Galaxy에 프랑스어 음성 데이터를 설치해 주세요.');
+        return;
+      }
       const spokenText = text.replace(/^[AB]:\s*/gm, '').replace(/\n/g, ' ');
       const utterance = new SpeechSynthesisUtterance(spokenText);
       utterance.lang = 'fr-FR'; utterance.rate = .82;
-      window.speechSynthesis.cancel(); window.speechSynthesis.speak(utterance);
+      if (frenchVoice) utterance.voice = frenchVoice;
+      utterance.onerror = event => {
+        if (event.error === 'canceled' || event.error === 'interrupted') return;
+        const reason = event.error === 'voice-unavailable' || event.error === 'language-unavailable'
+          ? '프랑스어 음성을 사용할 수 없어요. Galaxy 텍스트 음성 변환 설정에서 프랑스어 음성을 다운로드해 주세요.'
+          : '음성을 재생하지 못했어요. 브라우저와 프랑스어 음성 설정, 미디어 음량을 확인해 주세요.';
+        openAudioHelp(reason);
+      };
+      synthesis.cancel(); synthesis.speak(utterance);
     }
     document.getElementById('speakButton').addEventListener('click', () => speakFrench(currentWord()?.fr));
     document.getElementById('speakExampleButton').addEventListener('click', () => speakFrench(document.getElementById('exampleFrench').textContent));
+    document.getElementById('audioHelpButton').addEventListener('click', () => openAudioHelp());
+    document.getElementById('closeAudioHelpButton').addEventListener('click', closeAudioHelp);
+    document.getElementById('closeAudioHelpAction').addEventListener('click', closeAudioHelp);
+    document.querySelector('[data-close-audio-help]').addEventListener('click', closeAudioHelp);
     document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
       const view = button.dataset.view;
       document.querySelectorAll('[data-view]').forEach(item => item.classList.toggle('active', item.dataset.view === view));
