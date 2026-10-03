@@ -75,7 +75,7 @@
     .level:disabled { color: #a3a9b4; cursor: not-allowed; }
     .layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .82fr); gap: 17px; align-items: start; }
     .left-col, .right-col { display: grid; gap: 16px; min-width: 0; }
-    .panel { border: 1px solid var(--line); background: var(--white); border-radius: 9px; box-shadow: var(--shadow); }
+    .panel { min-width: 0; border: 1px solid var(--line); background: var(--white); border-radius: 9px; box-shadow: var(--shadow); }
     .lesson { padding: 20px 21px 19px; position: relative; overflow: hidden; }
     .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .panel-kicker { font: 10px 'DM Mono', monospace; color: #858b7e; letter-spacing: .9px; }
@@ -167,6 +167,9 @@
     .word-item strong { font-family: 'Nunito Sans', 'Gowun Dodum', sans-serif; font-weight: 600; display: block; font-size: 12px; }
     .word-item small { display: block; color: #8a9084; font-size: 9px; margin-top: 3px; }
     .word-item .tag { color: #88905f; font: 9px 'DM Mono', monospace; }
+    .external-search-panel { display: grid; justify-items: center; gap: 9px; padding: 20px 10px; text-align: center; }
+    .external-search-panel .secondary-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    .external-search-note { max-width: 270px; color: #858c99; font-size: 10px; line-height: 1.55; }
     .empty-state { text-align: center; color: #858b7e; padding: 21px 6px; font-size: 11px; line-height: 1.6; }
     .toast { position: fixed; bottom: 22px; left: 50%; z-index: 5; transform: translate(-50%, 16px); padding: 10px 15px; color: #fff; background: var(--ink); border-radius: 6px; font-size: 11px; opacity: 0; pointer-events: none; transition: .2s; white-space: nowrap; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -378,6 +381,12 @@
     let currentIndex = 0;
     let searchQuery = '';
     let selectedSearchIndex = 0;
+    let remoteSearchQuery = '';
+    let remoteSearchState = '';
+    let remoteSearchResult = null;
+    let remoteSearchController = null;
+    let remoteSearchRequestId = 0;
+    let remoteSearchTimer = null;
     let reviewMode = false;
     let reviewRevealed = false;
     let quiz = null;
@@ -410,6 +419,57 @@
           word.definition, word.exFr, word.exKo, word.exEn
         ].join(' ')).includes(query));
     }
+    function getBestTranslation(data, sourceText) {
+      const matches = (data.matches || [])
+        .filter(match => match.translation && Number(match.quality) > 0)
+        .sort((first, second) => Number(second.quality) - Number(first.quality));
+      const translation = matches[0]?.translation || data.responseData?.translatedText || '';
+      if (!translation || /^query length limit/i.test(translation) || normalizeSearchText(translation) === normalizeSearchText(sourceText)) return '';
+      return translation;
+    }
+    async function lookupExternalWord(query) {
+      if (!query) return;
+      remoteSearchController?.abort();
+      const controller = new AbortController();
+      remoteSearchController = controller;
+      const requestId = ++remoteSearchRequestId;
+      remoteSearchQuery = query;
+      remoteSearchState = 'loading';
+      remoteSearchResult = null;
+      renderWord(); renderList();
+
+      async function translateTo(language) {
+        const params = new URLSearchParams({ q: query, langpair: `fr|${language}` });
+        const response = await fetch(`https://api.mymemory.translated.net/get?${params}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Translation request failed: ${response.status}`);
+        return getBestTranslation(await response.json(), query);
+      }
+
+      try {
+        const [korean, english] = await Promise.all([translateTo('ko'), translateTo('en')]);
+        if (requestId !== remoteSearchRequestId) return;
+        if (!korean && !english) {
+          remoteSearchState = 'not-found';
+        } else {
+          remoteSearchResult = {
+            fr: query,
+            ipa: '웹 번역 결과 · 발음 기호 없음',
+            ko: korean || '번역 정보 없음',
+            en: english || 'Translation unavailable',
+            category: '웹 사전 번역',
+            definition: '무료 웹 번역 서비스 MyMemory의 자동 번역이에요. 문맥이나 품사에 따라 뜻이 달라질 수 있으며, 검색어가 외부 서비스로 전송됐어요.',
+            exFr: `Je cherche le mot « ${query} ».`,
+            exKo: `‘${query}’라는 단어를 찾고 있어요.`,
+            exEn: `I’m looking for the word “${query}”.`
+          };
+          remoteSearchState = 'found';
+        }
+      } catch (error) {
+        if (error.name === 'AbortError' || requestId !== remoteSearchRequestId) return;
+        remoteSearchState = 'error';
+      }
+      renderWord(); renderList();
+    }
     function visibleWords() {
       const words = listForLevel();
       if (!searchQuery) return words;
@@ -422,7 +482,9 @@
     function currentWord() {
       if (searchQuery) {
         const match = searchMatches()[selectedSearchIndex];
-        return match?.unlocked ? match.word : null;
+        if (match) return match.word;
+        if (remoteSearchState === 'found' && normalizeSearchText(remoteSearchQuery) === normalizeSearchText(searchQuery)) return remoteSearchResult;
+        return null;
       }
       return visibleWords()[currentIndex] || listForLevel()[0];
     }
@@ -430,25 +492,27 @@
     function renderWord() {
       const matches = searchQuery ? searchMatches() : [];
       const selectedMatch = matches[selectedSearchIndex];
+      const remoteResult = searchQuery && remoteSearchState === 'found' && normalizeSearchText(remoteSearchQuery) === normalizeSearchText(searchQuery)
+        ? remoteSearchResult
+        : null;
       const word = currentWord();
-      const noResults = searchQuery && !matches.some(match => match.unlocked);
+      const noResults = searchQuery && !word;
       document.querySelector('.lesson').hidden = Boolean(noResults);
       document.querySelector('.lesson-actions').hidden = Boolean(searchQuery);
       if (noResults) {
         document.querySelector('.lesson').hidden = false;
-        const foundLockedMatch = matches.length > 0;
-        document.getElementById('wordFrench').textContent = foundLockedMatch ? '다음 단계의 단어예요' : '검색 결과가 없어요';
-        document.getElementById('wordPronunciation').textContent = foundLockedMatch ? '이전 단계 실력 점검을 통과하면 열려요' : '다른 단어나 표현을 검색해 보세요';
-        document.getElementById('wordKorean').textContent = foundLockedMatch ? '레벨 잠김' : '검색 결과 없음';
-        document.getElementById('wordEnglish').textContent = foundLockedMatch ? 'Level locked' : 'No results';
-        document.getElementById('wordDefinition').textContent = foundLockedMatch
-          ? '검색 결과는 있지만 이 단어가 속한 레벨은 아직 잠겨 있어요. 앞 단계를 마치고 실력 점검을 통과하면 학습할 수 있습니다.'
-          : '프랑스어, 한국어, 영어 단어와 뜻, 분류, 대화 예문을 검색할 수 있어요.';
-        document.getElementById('exampleFrench').textContent = foundLockedMatch ? 'Terminez le niveau précédent pour continuer.' : 'Essayez un autre mot.';
-        document.getElementById('exampleKorean').textContent = foundLockedMatch ? '이전 레벨을 완료하고 계속 학습해 보세요.' : '다른 단어를 검색해 보세요.';
-        document.getElementById('exampleEnglish').textContent = foundLockedMatch ? 'Complete the previous level to continue.' : 'Try another word.';
-        document.getElementById('unitChip').textContent = foundLockedMatch ? '레벨 잠김' : '검색';
-        document.getElementById('lessonKicker').textContent = foundLockedMatch ? 'NIVEAU VERROUILLÉ · 단계 잠김' : 'RECHERCHE · 단어 찾기';
+        const remoteMessage = remoteSearchQuery === searchQuery ? remoteSearchState : '';
+        const message = remoteMessage === 'loading' ? '웹 사전에서 번역을 찾고 있어요' : remoteMessage === 'not-found' ? '웹 사전에서도 결과를 찾지 못했어요' : remoteMessage === 'error' ? '웹 사전에 연결할 수 없어요' : '검색 결과가 없어요';
+        document.getElementById('wordFrench').textContent = message;
+        document.getElementById('wordPronunciation').textContent = '프랑스어 단어나 표현을 입력해 보세요';
+        document.getElementById('wordKorean').textContent = '검색 결과 없음';
+        document.getElementById('wordEnglish').textContent = 'No results';
+        document.getElementById('wordDefinition').textContent = '전체 레벨 단어장과 무료 웹 번역 검색을 사용할 수 있어요.';
+        document.getElementById('exampleFrench').textContent = 'Essayez un autre mot.';
+        document.getElementById('exampleKorean').textContent = '검색 결과를 찾지 못했어요.';
+        document.getElementById('exampleEnglish').textContent = 'No matching word found.';
+        document.getElementById('unitChip').textContent = remoteMessage === 'error' ? '연결 오류' : '검색';
+        document.getElementById('lessonKicker').textContent = 'RECHERCHE · 전체 단어 검색';
         document.getElementById('wordKorean').parentElement.hidden = false;
         document.getElementById('wordEnglish').parentElement.hidden = false;
         document.getElementById('wordDefinition').hidden = false;
@@ -464,7 +528,9 @@
       document.getElementById('exampleKorean').textContent = word.exKo;
       document.getElementById('exampleEnglish').textContent = word.exEn;
       document.getElementById('unitChip').textContent = word.category;
-      document.getElementById('lessonKicker').textContent = searchQuery ? `RECHERCHE · ${levelNames[selectedMatch.level]} 단어` : reviewMode && !reviewRevealed ? 'CARTE MÉMOIRE · 먼저 떠올려 보세요' : 'LE MOT DU JOUR · 오늘의 단어';
+      document.getElementById('lessonKicker').textContent = searchQuery
+        ? remoteResult ? 'DICTIONNAIRE WEB · 자동 번역' : `RECHERCHE · ${levelNames[selectedMatch.level]} 단계${selectedMatch.unlocked ? '' : ' 미리보기'}`
+        : reviewMode && !reviewRevealed ? 'CARTE MÉMOIRE · 먼저 떠올려 보세요' : 'LE MOT DU JOUR · 오늘의 단어';
       document.getElementById('wordKorean').parentElement.hidden = reviewMode && !reviewRevealed;
       document.getElementById('wordEnglish').parentElement.hidden = reviewMode && !reviewRevealed;
       document.getElementById('wordDefinition').hidden = reviewMode && !reviewRevealed;
@@ -478,39 +544,85 @@
         const matches = searchMatches();
         document.getElementById('vocabTitle').textContent = '전체 단어 검색';
         document.getElementById('vocabSubtitle').textContent = matches.length
-          ? `전체 단계에서 ${matches.length}개를 찾았어요. 잠긴 단계는 먼저 이전 레벨을 완료해 주세요.`
-          : '프랑스어·한국어·영어, 뜻과 예문을 검색해 보세요.';
+          ? `레벨에 관계없이 전체 ${matches.length}개 결과를 볼 수 있어요. 검색은 학습 진도에 반영되지 않습니다.`
+          : '레벨에 관계없이 전체 단어장을 검색해요.';
         document.getElementById('vocabCount').textContent = `${String(matches.length).padStart(2, '0')} RÉSULTATS`;
-        if (!matches.length) {
-          list.innerHTML = '<div class="empty-state">단어를 찾지 못했어요.<br>프랑스어, 한국어, 영어 또는 예문으로 검색해 보세요.</div>';
-          return;
-        }
-        list.replaceChildren();
-        matches.forEach((match, index) => {
+        if (matches.length) {
+          list.replaceChildren();
+          matches.forEach((match, index) => {
           const button = document.createElement('button');
           button.className = `word-item ${index === selectedSearchIndex ? 'current' : ''}`;
           button.type = 'button';
-          button.disabled = !match.unlocked;
           button.dataset.searchIndex = String(index);
-          button.setAttribute('aria-label', `${match.word.fr}, ${match.word.ko}, ${levelNames[match.level]}${match.unlocked ? '' : ', 단계 잠김'}`);
+          button.setAttribute('aria-label', `${match.word.fr}, ${match.word.ko}, ${levelNames[match.level]} 단계${match.unlocked ? '' : ', 미리보기'}`);
           const label = document.createElement('span');
           const french = document.createElement('strong');
           french.textContent = match.word.fr;
           const korean = document.createElement('small');
-          korean.textContent = `${match.word.ko} · ${levelNames[match.level]}${match.unlocked ? '' : ' · 잠김'}`;
+          korean.textContent = `${match.word.ko} · ${levelNames[match.level]}${match.unlocked ? '' : ' · 미리보기'}`;
           const number = document.createElement('span');
           number.className = 'tag';
-          number.textContent = match.unlocked ? String(index + 1).padStart(2, '0') : '잠김';
+          number.textContent = String(index + 1).padStart(2, '0');
           label.append(french, korean);
           button.append(label, number);
           button.addEventListener('click', () => {
-            if (!match.unlocked) return;
             selectedSearchIndex = index;
             reviewMode = false;
             renderWord(); renderList();
           });
           list.append(button);
-        });
+          });
+          return;
+        }
+
+        const stateMatchesQuery = remoteSearchQuery === searchQuery;
+        if (stateMatchesQuery && remoteSearchState === 'found') {
+          const row = document.createElement('div');
+          row.className = 'word-item current';
+          const label = document.createElement('span');
+          const french = document.createElement('strong');
+          french.textContent = remoteSearchResult.fr;
+          const korean = document.createElement('small');
+          korean.textContent = `${remoteSearchResult.ko} · 웹 사전`;
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = 'WEB';
+          label.append(french, korean);
+          row.append(label, tag);
+          list.replaceChildren(row);
+          document.getElementById('vocabCount').textContent = 'WEB';
+          return;
+        }
+
+        const panel = document.createElement('div');
+        panel.className = 'external-search-panel';
+        const message = document.createElement('div');
+        message.className = 'empty-state';
+        const lookupButton = document.createElement('button');
+        lookupButton.className = 'secondary-button';
+        lookupButton.type = 'button';
+        if (stateMatchesQuery && remoteSearchState === 'loading') {
+          message.textContent = '단어장에 없어 무료 웹 번역 사전에서 찾고 있어요…';
+          lookupButton.hidden = true;
+        } else if (stateMatchesQuery && remoteSearchState === 'not-found') {
+          message.textContent = '웹 번역 사전에서도 결과를 찾지 못했어요. 철자를 확인해 주세요.';
+          lookupButton.textContent = '다시 검색';
+          lookupButton.addEventListener('click', () => lookupExternalWord(searchQuery));
+        } else if (stateMatchesQuery && remoteSearchState === 'error') {
+          message.textContent = '웹 사전에 연결하지 못했어요. 인터넷 연결 후 다시 시도해 주세요.';
+          lookupButton.textContent = '다시 시도';
+          lookupButton.addEventListener('click', () => lookupExternalWord(searchQuery));
+        } else {
+          message.textContent = '단어장에 없는 단어도 웹 번역 사전에서 찾아볼 수 있어요.';
+          lookupButton.textContent = `“${searchQuery}” 웹 사전에서 검색`;
+          lookupButton.addEventListener('click', () => lookupExternalWord(searchQuery));
+        }
+        const note = document.createElement('small');
+        note.className = 'external-search-note';
+        note.textContent = '검색어만 무료 번역 서비스 MyMemory로 전송됩니다. 무료 서비스의 요청 한도와 번역 품질은 제공처 정책을 따릅니다.';
+        panel.append(message, lookupButton, note);
+        list.replaceChildren(panel);
+        document.getElementById('vocabCount').textContent = stateMatchesQuery && remoteSearchState === 'loading' ? '…' : 'WEB';
         return;
       }
       const words = visibleWords();
@@ -582,6 +694,12 @@
       currentIndex = 0;
       searchQuery = '';
       selectedSearchIndex = 0;
+      remoteSearchController?.abort();
+      clearTimeout(remoteSearchTimer);
+      remoteSearchRequestId += 1;
+      remoteSearchQuery = '';
+      remoteSearchState = '';
+      remoteSearchResult = null;
       reviewMode = false;
       document.getElementById('searchInput').value = '';
       document.querySelectorAll('.level').forEach(button => {
@@ -770,7 +888,20 @@
       if (event.key === 'Escape' && !document.getElementById('audioHelpDialog').hidden) closeAudioHelp();
     });
     document.getElementById('searchInput').addEventListener('input', event => {
-      searchQuery = event.target.value.trim(); currentIndex = 0; selectedSearchIndex = 0; reviewMode = false; renderWord(); renderList();
+      searchQuery = event.target.value.trim(); currentIndex = 0; selectedSearchIndex = 0; reviewMode = false;
+      remoteSearchController?.abort();
+      clearTimeout(remoteSearchTimer);
+      remoteSearchRequestId += 1;
+      remoteSearchQuery = '';
+      remoteSearchState = '';
+      remoteSearchResult = null;
+      if (searchQuery && !searchMatches().length) {
+        const query = searchQuery;
+        remoteSearchQuery = query;
+        remoteSearchState = 'loading';
+        remoteSearchTimer = setTimeout(() => lookupExternalWord(query), 450);
+      }
+      renderWord(); renderList();
     });
     function openAudioHelp(reason) {
       document.getElementById('audioHelpReason').textContent = reason || '브라우저가 음성 읽기를 지원하지 않거나 프랑스어 음성이 준비되지 않았을 수 있어요.';
