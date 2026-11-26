@@ -1,0 +1,10 @@
+{
+  "name": "appelle-moi",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "sync": "cap sync ios",
+    "open": "cap open ios",
+    "assets": "capacitor-assets generate --ios"
+  }
+}

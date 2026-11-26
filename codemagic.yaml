@@ -1,0 +1,57 @@
+# Codemagic 빌드 설정 — Mac 없이 iOS 앱을 빌드해 TestFlight로 올려요.
+# 아래 3곳(KEY_NAME, BUNDLE_ID, APP_STORE_APP_ID)을 본인 값으로 바꾸세요.
+workflows:
+  ios-appelle-moi:
+    name: Appelle-moi iOS
+    instance_type: mac_mini_m2   # 사용 가능한 최신 값은 Codemagic 문서에서 확인
+    max_build_duration: 45
+    integrations:
+      app_store_connect: appellemoi_key        # ① Codemagic에 등록한 App Store Connect API 키 이름
+    environment:
+      xcode: latest
+      node: 22
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.example.appellemoi   # ② capacitor.config.json의 appId와 같아야 해요
+      vars:
+        APP_STORE_APP_ID: "0000000000"         # ③ App Store Connect > 앱 정보의 Apple ID(숫자)
+    scripts:
+      - name: 의존성 설치
+        script: |
+          npm install @capacitor/core @capacitor/ios @capacitor/local-notifications
+          npm install -D @capacitor/cli @capacitor/assets
+      - name: iOS 프로젝트 생성·동기화
+        script: |
+          npx cap add ios
+          npx capacitor-assets generate --ios
+          npx cap sync ios
+      - name: Info.plist·빌드 설정 보정
+        script: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"
+          PBX=ios/App/App.xcodeproj/project.pbxproj
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $BUILD_NUMBER;/g" "$PBX"
+          sed -i '' 's/TARGETED_DEVICE_FAMILY = "1,2";/TARGETED_DEVICE_FAMILY = 1;/g' "$PBX"
+      - name: 서명 설정 적용
+        script: |
+          xcode-project use-profiles
+      - name: IPA 빌드
+        script: |
+          if [ -d ios/App/App.xcworkspace ]; then
+            xcode-project build-ipa --workspace ios/App/App.xcworkspace --scheme App
+          else
+            xcode-project build-ipa --project ios/App/App.xcodeproj --scheme App
+          fi
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      email:
+        recipients:
+          - appellemoi.app@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

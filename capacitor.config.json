@@ -1,0 +1,9 @@
+{
+  "appId": "com.example.appellemoi",
+  "appName": "Appelle-moi",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#f4f6f9"
+  }
+}
